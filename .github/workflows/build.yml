@@ -145,6 +145,9 @@ jobs:
             -Dshared-llvm=enabled \
             -Dgallium-rusticl=false \
             -Dvideo-codecs=all \
+            -Dteflon=true \
+            -Dinstall-mesa-clc=true \
+            -Dinstall-precomp-compiler=true \
             -Dwayland:documentation=false
 
       - name: Build and Install
