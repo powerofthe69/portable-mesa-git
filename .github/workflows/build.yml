@@ -47,12 +47,26 @@ jobs:
     runs-on: ubuntu-latest
     env:
       MESA_COMMIT: ${{ needs.check-release.outputs.commit }}
-      CC: clang-21
+      CC: gcc
+      CXX: g++
       LLVM_CONFIG: /usr/lib/llvm-21/bin/llvm-config
       PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/usr/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build bison flex cmake \
+            libdrm-dev libx11-dev libxxf86vm-dev libxrandr-dev \
+            libxshmfence-dev libwayland-dev libclc-21-dev\
+            libxcb-glx0-dev libxcb-shm0-dev libxcb-dri3-dev libxcb-present-dev \
+            libxcb-randr0-dev libxcb-xfixes0-dev libxcb-dri2-0-dev libx11-xcb-dev \
+            libzstd-dev libexpat1-dev libelf-dev gcc g++ \
+            libxml2-dev python3-mako pkg-config libvulkan-dev \
+            glslang-tools libva-dev libglvnd-dev patchelf \
+            libunwind-dev liblua5.4-dev libffi-dev libexpat1-dev
 
       - name: Install LLVM 21 (Latest Snapshot)
         run: |
@@ -84,19 +98,6 @@ jobs:
 
           # Verify
           pkg-config --modversion LLVMSPIRVLib
-
-      - name: Install Build Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build bison flex cmake \
-            libdrm-dev libx11-dev libxxf86vm-dev libxrandr-dev \
-            libxshmfence-dev libwayland-dev libclc-21-dev\
-            libxcb-glx0-dev libxcb-shm0-dev libxcb-dri3-dev libxcb-present-dev \
-            libxcb-randr0-dev libxcb-xfixes0-dev libxcb-dri2-0-dev libx11-xcb-dev \
-            libzstd-dev libexpat1-dev libelf-dev \
-            libxml2-dev python3-mako pkg-config libvulkan-dev \
-            glslang-tools libva-dev libglvnd-dev patchelf \
-            libunwind-dev liblua5.4-dev libffi-dev libexpat1-dev
 
       - name: Install Latest Meson Globally
         run: sudo pip3 install meson mako
