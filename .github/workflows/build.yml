@@ -20,6 +20,9 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
+      - name: Add Magic Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@v2
+
       - name: Install Dependencies
         run: nix profile install nixpkgs#nix-prefetch-git nixpkgs#jq
 
@@ -122,6 +125,7 @@ jobs:
         run: |
           mkdir -p artifact
           cp -rL bundle-result/* artifact/
+          chmod -R +w artifact
           cd artifact
           sed -i 's|\("library_path": "\).*/\([^/]*"\)|\1\2|' share/vulkan/icd.d/*.json
           tar -cJvf ../mesa-git-${{ env.MESA_COMMIT }}.tar.xz .
