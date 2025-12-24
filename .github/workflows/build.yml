@@ -142,9 +142,8 @@ jobs:
             - 64-bit Mesa (`lib/`)
             - 32-bit Mesa (`lib32/`)
             - Vulkan ICDs and layers (`share/`)
-            - Bundled LLVM dependencies (`lib/bundled/`, `lib32/bundled/`)
-
-            **Mesa Commit:** `${{ env.MESA_COMMIT }}`
+            - Bundled LLVM 21 + dependencies (`lib/bundled/`, `lib32/bundled/`)
+            
           files: mesa-git-${{ env.MESA_COMMIT }}.tar.xz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
