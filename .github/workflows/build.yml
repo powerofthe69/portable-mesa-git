@@ -72,10 +72,13 @@ jobs:
             pkgs/sources.json
             flake.lock
 
-      - name: Decide if build is needed
+      - name: Build if manually triggered or updated sources
         id: decide
         run: |
-          if [ "${{ steps.sources.outputs.sources_changed }}" == "true" ]; then
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "Manual workflow trigger detected. Forcing build."
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          elif [ "${{ steps.sources.outputs.sources_changed }}" == "true" ]; then
             echo "Sources changed."
             echo "should_build=true" >> $GITHUB_OUTPUT
           elif [ "${{ steps.nixpkgs.outputs.nixpkgs_changed }}" == "true" ]; then
