@@ -5,38 +5,39 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
+  nixConfig = {
+    extra-substituters = [ "https://mesa-git.cachix.org" ];
+    extra-trusted-public-keys = [
+      "mesa-git.cachix.org-1:PMker4ByePMzYKSYgWipawpKDRwg9wLZOwP2sm4zSy0="
+    ];
+  };
+
   outputs =
-    {
-      self,
-      nixpkgs,
-    }:
+    { self, nixpkgs }:
     let
       system = "x86_64-linux";
-      pkgs = import nixpkgs { inherit system; };
+
       sourceData = builtins.fromJSON (builtins.readFile ./pkgs/sources.json);
+
       fetchSrc =
-        key:
+        pkgs: key:
         let
           src = sourceData.${key};
-          drv = pkgs.fetchgit {
-            inherit (src) url rev sha256;
-          };
         in
-        drv // { rev = src.rev; };
+        pkgs.fetchgit { inherit (src) url rev sha256; } // { inherit (src) rev; };
 
-      mesa-src = fetchSrc "mesa";
-      libdrm-src = fetchSrc "libdrm";
-      wayland-protocols-src = fetchSrc "wayland-protocols";
+      makeMesaPkgs =
+        pkgs:
+        import ./pkgs {
+          inherit pkgs;
+          mesa-src = fetchSrc pkgs "mesa";
+          libdrm-src = fetchSrc pkgs "libdrm";
+          wayland-protocols-src = fetchSrc pkgs "wayland-protocols";
+        };
 
-      mesaPkgs = import ./pkgs {
-        inherit
-          pkgs
-          mesa-src
-          libdrm-src
-          wayland-protocols-src
-          ;
-      };
-
+      # For flake outputs (packages, version info)
+      pkgs = nixpkgs.legacyPackages.${system};
+      mesaPkgs = makeMesaPkgs pkgs;
     in
     {
       packages.${system} = {
@@ -47,12 +48,29 @@
           wayland-protocols-git
           bundle
           ;
-
         default = mesaPkgs.mesa-git;
       };
 
-      # For easy version checking in CI
-      version = mesaPkgs.mesaVersion;
-      commit = mesa-src.rev or "unknown";
+      # Overlay injects mesa-git into pkgs
+      overlays.default =
+        final: prev:
+        let
+          mesaPkgs = makeMesaPkgs final;
+        in
+        {
+          inherit (mesaPkgs)
+            mesa-git
+            mesa32-git
+            libdrm-git
+            wayland-protocols-git
+            ;
+        };
+
+      # NixOS module to replace system Mesa
+      nixosModules.default = import ./modules/mesa-git.nix;
+      nixosModules.mesa-git = self.nixosModules.default;
+
+      # Metadata
+      lib.version = sourceData.mesa.rev;
     };
 }

@@ -1,158 +1,169 @@
-name: Build "Portable" Mesa-Git (AMD/Intel/NVIDIA + LLVM 21)
+name: Build "Portable" Mesa-Git (AMD/Intel/NVIDIA + LLVM 21) + Cache for Nix
 
 on:
   schedule:
-    - cron: "0 5 * * *"
+    - cron: "0 5 * * *" # Nightly build
+    - cron: "30 6 * * 3" # Weekly promote
   workflow_dispatch:
+    inputs:
+      task:
+        description: "Task to run"
+        required: true
+        default: "build-nightly"
+        type: choice
+        options:
+          - build-nightly
+          - promote-to-main
+
+env:
+  CACHIX_CACHE: mesa-git
 
 jobs:
-  check-updates:
+  nightly-build:
+    if: github.event.schedule == '0 5 * * *' || inputs.task == 'build-nightly'
     runs-on: ubuntu-latest
     outputs:
-      should_build: ${{ steps.decide.outputs.should_build }}
-      mesa_rev: ${{ steps.sources.outputs.mesa_rev }}
+      mesa_rev: ${{ steps.update.outputs.mesa_rev }}
+      changed: ${{ steps.update.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: nightly
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Nix
         uses: cachix/install-nix-action@v27
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
+            accept-flake-config = true
 
-      - name: Add Magic Nix Cache
-        uses: DeterminateSystems/magic-nix-cache-action@v2
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v15
+        with:
+          name: ${{ env.CACHIX_CACHE }}
+          authToken: ${{ secrets.CACHIX_KEY }}
 
-      - name: Install Dependencies
-        run: nix profile install nixpkgs#nix-prefetch-git nixpkgs#jq
-
-      - name: Check for source updates. Build if any source changed.
-        id: sources
+      - name: Update Sources
+        id: update
         run: |
           cd pkgs
-
-          # Capture current mesa rev
-          OLD_MESA=$(jq -r '.mesa.rev' ./sources.json)
-          OLD_LIBDRM=$(jq -r '.libdrm.rev' ./sources.json)
-          OLD_WAYLAND=$(jq -r '.["wayland-protocols"].rev' ./sources.json)
-
-          # Run update script
+          OLD_MESA=$(jq -r '.mesa.rev' sources.json)
           bash update.sh
+          NEW_MESA=$(jq -r '.mesa.rev' sources.json)
 
-          # Capture new revs
-          NEW_MESA=$(jq -r '.mesa.rev' ./sources.json)
-          NEW_LIBDRM=$(jq -r '.libdrm.rev' ./sources.json)
-          NEW_WAYLAND=$(jq -r '.["wayland-protocols"].rev' ./sources.json)
-
-          # Output mesa rev for tagging
           echo "mesa_rev=${NEW_MESA:0:7}" >> $GITHUB_OUTPUT
 
-          # Check if any source changed
-          if [ "$OLD_MESA" != "$NEW_MESA" ] || [ "$OLD_LIBDRM" != "$NEW_LIBDRM" ] || [ "$OLD_WAYLAND" != "$NEW_WAYLAND" ]; then
-            echo "sources_changed=true" >> $GITHUB_OUTPUT
+          if [ "$OLD_MESA" != "$NEW_MESA" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            nix flake update --flake ..
           else
-            echo "sources_changed=false" >> $GITHUB_OUTPUT
+            echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Check for nixpkgs updates
-        id: nixpkgs
+      - name: Build Mesa
+        if: steps.update.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         run: |
-          OLD_NIXPKGS=$(jq -r '.nodes.nixpkgs.locked.rev // ""' flake.lock)
-          nix flake update
-          NEW_NIXPKGS=$(jq -r '.nodes.nixpkgs.locked.rev' flake.lock)
+          # Build and push to Cachix automatically via cachix-action
+          nix build .#mesa-git .#mesa32-git -L
 
-          if [ "$OLD_NIXPKGS" != "$NEW_NIXPKGS" ]; then
-            echo "nixpkgs_changed=true" >> $GITHUB_OUTPUT
-          else
-            echo "nixpkgs_changed=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Upload updated files
-        uses: actions/upload-artifact@v4
-        with:
-          name: updated-sources
-          path: |
-            pkgs/sources.json
-            flake.lock
-
-      - name: Build if manually triggered or updated sources
-        id: decide
+      - name: Build & Package Bundle
+        if: steps.update.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          MESA_REV: ${{ steps.update.outputs.mesa_rev }}
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "Manual workflow trigger detected. Forcing build."
-            echo "should_build=true" >> $GITHUB_OUTPUT
-          elif [ "${{ steps.sources.outputs.sources_changed }}" == "true" ]; then
-            echo "Sources changed."
-            echo "should_build=true" >> $GITHUB_OUTPUT
-          elif [ "${{ steps.nixpkgs.outputs.nixpkgs_changed }}" == "true" ]; then
-            echo "Nixpkgs changed."
-            echo "should_build=true" >> $GITHUB_OUTPUT
-          else
-            echo "No changes detected."
-            echo "should_build=false" >> $GITHUB_OUTPUT
-          fi
+          nix build .#bundle --out-link bundle-result -L
 
-  build-mesa:
-    needs: check-updates
-    if: needs.check-updates.outputs.should_build == 'true'
-    runs-on: ubuntu-latest
-    env:
-      MESA_COMMIT: ${{ needs.check-updates.outputs.mesa_rev }}
+          mkdir -p artifact && cp -rL bundle-result/* artifact/ && chmod -R +w artifact
 
-    steps:
-      - uses: actions/checkout@v4
+          # Fix ICD paths for portability
+          sed -i 's|\("library_path": "\).*/\([^/]*"\)|\1\2|' artifact/share/vulkan/icd.d/*.json
 
-      - name: Download updated sources
-        uses: actions/download-artifact@v4
-        with:
-          name: updated-sources
-          path: .
-
-      - name: Move sources to correct location
-        run: |
-          mv sources.json pkgs/sources.json 2>/dev/null || true
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@v27
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-
-      - name: Add Magic Nix Cache
-        uses: DeterminateSystems/magic-nix-cache-action@v2
-        
-      - name: Build Bundle
-        run: nix build .#bundle --out-link bundle-result -L
-
-      - name: Package Artifact
-        run: |
-          mkdir -p artifact
-          cp -rL bundle-result/* artifact/
-          chmod -R +w artifact
-          cd artifact
-          sed -i 's|\("library_path": "\).*/\([^/]*"\)|\1\2|' share/vulkan/icd.d/*.json
-          tar -cJvf ../mesa-git-${{ env.MESA_COMMIT }}.tar.xz .
+          tar -cJf "mesa-git-${MESA_REV}.tar.xz" -C artifact .
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        if: steps.update.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: mesa-git-${{ env.MESA_COMMIT }}
-          name: mesa-git-${{ env.MESA_COMMIT }}
+          tag_name: nightly-${{ steps.update.outputs.mesa_rev }}
+          name: "Nightly: ${{ steps.update.outputs.mesa_rev }}"
+          prerelease: true
           body: |
-            Automated Mesa-git build.
+            **Automated Nightly Build**
 
-            **Contents:**
-            - 64-bit Mesa (`lib/`)
-            - 32-bit Mesa (`lib32/`)
-            - Vulkan ICDs and layers (`share/`)
-            - Bundled LLVM 21 + dependencies (`lib/bundled/`, `lib32/bundled/`)
-            
-          files: mesa-git-${{ env.MESA_COMMIT }}.tar.xz
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            Mesa commit: `${{ steps.update.outputs.mesa_rev }}`
 
-      - name: Commit updated sources
+            ⚠️ This is an untested nightly build. For stable builds, use releases from `main`.
+          files: mesa-git-${{ steps.update.outputs.mesa_rev }}.tar.xz
+
+      - name: Commit Updates
+        if: steps.update.outputs.changed == 'true'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Automated bump of sources and flake.lock"
+          commit_message: "nightly: ${{ steps.update.outputs.mesa_rev }}"
+          branch: nightly
           file_pattern: "pkgs/sources.json flake.lock"
+
+  promote-to-main:
+    if: github.event.schedule == '30 6 * * 3' || inputs.task == 'promote-to-main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge Nightly → Main
+        id: merge
+        run: |
+          git fetch origin nightly
+
+          NIGHTLY_REV=$(git log origin/nightly -1 --format=%s | grep -oP '(?<=nightly: )[a-f0-9]+' || echo "unknown")
+          echo "mesa_rev=${NIGHTLY_REV}" >> $GITHUB_OUTPUT
+
+          if git merge-base --is-ancestor origin/nightly HEAD; then
+            echo "Main is already up to date with nightly"
+            echo "skipped=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          git merge --ff-only origin/nightly || git merge origin/nightly -m "promote: ${NIGHTLY_REV}"
+          echo "skipped=false" >> $GITHUB_OUTPUT
+
+      - name: Push Main
+        if: steps.merge.outputs.skipped != 'true'
+        run: git push origin main
+
+      - name: Create Stable Release
+        if: steps.merge.outputs.skipped != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.merge.outputs.mesa_rev }}
+          name: "Mesa Git ${{ steps.merge.outputs.mesa_rev }}"
+          prerelease: false
+          body: |
+            **Weekly Stable Release**
+
+            Mesa commit: `${{ steps.merge.outputs.mesa_rev }}`
+
+            This build has been running on the nightly branch without reported issues.
+
+            **Portable Download:**
+            [Download Artifact from Nightly Release](https://github.com/${{ github.repository }}/releases/tag/nightly-${{ steps.merge.outputs.mesa_rev }})
+
+            ### NixOS Usage
+            #
+            {
+              inputs.mesa-git.url = "github:powerofthe69/mesa-git-nix";
+              # ...
+              nixpkgs.overlays = [ inputs.mesa-git.overlays.default ];
+              drivers.mesa-git.enable = true;
+            }

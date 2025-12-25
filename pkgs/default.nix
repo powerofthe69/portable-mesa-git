@@ -14,20 +14,23 @@ let
   waylandProtocolsVersion = builtins.substring 0 7 (wayland-protocols-src.rev or "unknown");
 
   # Build libdrm-git
-  libdrm-git = pkgs.libdrm.overrideAttrs (old: {
+  # Use clang for allegedly faster compilation and tighter integration with LLVM
+  libdrm-git = (pkgs.libdrm.override { stdenv = pkgs.clangStdenv; }).overrideAttrs (old: {
     pname = "libdrm-git";
     version = "${libdrmVersion}";
     src = libdrm-src;
   });
 
   # Build wayland-protocols-git
-  wayland-protocols-git = pkgs.wayland-protocols.overrideAttrs (old: {
-    pname = "wayland-protocols-git";
-    version = "${waylandProtocolsVersion}";
-    src = wayland-protocols-src;
-  });
+  # Mostly XML but use clang for uniformity
+  wayland-protocols-git =
+    (pkgs.wayland-protocols.override { stdenv = pkgs.clangStdenv; }).overrideAttrs
+      (old: {
+        pname = "wayland-protocols-git";
+        version = "${waylandProtocolsVersion}";
+        src = wayland-protocols-src;
+      });
 
-  # Common mesa configuration
   makeMesa =
     {
       is32bit ? false,
@@ -35,7 +38,8 @@ let
     let
       basePkgs = if is32bit then pkgs.pkgsi686Linux else pkgs;
     in
-    basePkgs.mesa.overrideAttrs (old: {
+    # Use clang for allegedly faster compilation and tighter integration with LLVM
+    (basePkgs.mesa.override { stdenv = basePkgs.clangStdenv; }).overrideAttrs (old: {
       pname = "mesa-git";
       version = "${mesaVersion}";
       src = mesa-src;
@@ -61,7 +65,7 @@ let
         wayland-protocols-git
       ];
 
-      # Remove spirv2dxil from postInstall
+      # Remove spirv2dxil from postInstall too
       postInstall =
         builtins.replaceStrings
           [ "moveToOutput bin/spirv2dxil $spirv2dxil" "moveToOutput \"lib/libspirv_to_dxil*\" $spirv2dxil" ]
