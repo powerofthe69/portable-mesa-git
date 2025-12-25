@@ -2,8 +2,8 @@ name: Build "Portable" Mesa-Git (AMD/Intel/NVIDIA + LLVM 21) + Cache for Nix
 
 on:
   schedule:
-    - cron: "0 5 * * *" # Nightly build
-    - cron: "30 6 * * 3" # Weekly promote
+    - cron: "0 5 * * *" # Nightly
+    - cron: "30 6 * * 3" # Weekly
   workflow_dispatch:
     inputs:
       task:
@@ -86,15 +86,17 @@ jobs:
         if: steps.update.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: nightly-${{ steps.update.outputs.mesa_rev }}
-          name: "Nightly: ${{ steps.update.outputs.mesa_rev }}"
-          prerelease: true
+          tag_name: mesa-git-${{ steps.update.outputs.mesa_rev }}
+          name: "mesa-git-${{ steps.update.outputs.mesa_rev }}"
           body: |
             **Automated Nightly Build**
 
-            Mesa commit: `${{ steps.update.outputs.mesa_rev }}`
+            Contains:
+              - 64-bit Mesa (`lib/`)
+              - 32-bit Mesa (`lib32/`)
+              - Vulkan ICDs and layers (`share/`)
+              - Bundled LLVM 21 + dependencies (`lib/bundled/`, `lib32/bundled/`)
 
-            ⚠️ This is an untested nightly build. For stable builds, use releases from `main`.
           files: mesa-git-${{ steps.update.outputs.mesa_rev }}.tar.xz
 
       - name: Commit Updates
