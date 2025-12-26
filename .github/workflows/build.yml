@@ -99,13 +99,13 @@ jobs:
 
       #    files: mesa-git-${{ steps.update.outputs.mesa_rev }}.tar.xz
 
-      - name: Commit Updates
-        if: steps.update.outputs.changed == 'true'
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "nightly: ${{ steps.update.outputs.mesa_rev }}"
-          branch: nightly
-          file_pattern: "pkgs/sources.json flake.lock"
+      #- name: Commit Updates
+      #  if: steps.update.outputs.changed == 'true'
+      #  uses: stefanzweifel/git-auto-commit-action@v5
+      #  with:
+      #    commit_message: "nightly: ${{ steps.update.outputs.mesa_rev }}"
+      #    branch: nightly
+      #    file_pattern: "pkgs/sources.json flake.lock"
 
   promote-to-main:
     if: github.event.schedule == '30 6 * * 3' || inputs.task == 'promote-to-main'
