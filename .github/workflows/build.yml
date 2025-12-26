@@ -3,7 +3,7 @@ name: Build "Portable" Mesa-Git (AMD/Intel/NVIDIA + LLVM 21) + Cache for Nix
 on:
   schedule:
     - cron: "0 5 * * *" # Nightly
-    - cron: "30 6 * * 3" # Weekly
+    - cron: "30 5 * * 3" # Weekly
   workflow_dispatch:
     inputs:
       task:
@@ -21,7 +21,7 @@ env:
 jobs:
   nightly-build:
     if: github.event.schedule == '0 5 * * *' || inputs.task == 'build-nightly'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       mesa_rev: ${{ steps.update.outputs.mesa_rev }}
       changed: ${{ steps.update.outputs.changed }}
@@ -82,12 +82,15 @@ jobs:
 
           tar -cJf "mesa-git-${MESA_REV}.tar.xz" -C artifact .
 
+          echo "Bundle complete & archive created!"
+
       - name: Create Release
         if: steps.update.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: mesa-git-${{ steps.update.outputs.mesa_rev }}
           name: "mesa-git-${{ steps.update.outputs.mesa_rev }}"
+          prerelease: true
           body: |
             **Automated Nightly Build**
 
@@ -108,8 +111,8 @@ jobs:
           file_pattern: "pkgs/sources.json flake.lock"
 
   promote-to-main:
-    if: github.event.schedule == '30 6 * * 3' || inputs.task == 'promote-to-main'
-    runs-on: ubuntu-latest
+    if: github.event.schedule == '30 5 * * 3' || inputs.task == 'promote-to-main'
+    runs-on: self-hosted
     permissions:
       contents: write
     steps:
@@ -150,7 +153,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.merge.outputs.mesa_rev }}
-          name: "Mesa Git ${{ steps.merge.outputs.mesa_rev }}"
+          name: "mesa-git-${{ steps.merge.outputs.mesa_rev }}"
           prerelease: false
           body: |
             **Weekly Stable Release**
