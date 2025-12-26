@@ -21,7 +21,7 @@ env:
 jobs:
   nightly-build:
     if: github.event.schedule == '0 5 * * *' || inputs.task == 'build-nightly'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       mesa_rev: ${{ steps.update.outputs.mesa_rev }}
       changed: ${{ steps.update.outputs.changed }}
@@ -38,11 +38,11 @@ jobs:
             experimental-features = nix-command flakes
             accept-flake-config = true
 
-      - name: Setup Cachix
-        uses: cachix/cachix-action@v15
-        with:
-          name: ${{ env.CACHIX_CACHE }}
-          authToken: ${{ secrets.CACHIX_KEY }}
+      #- name: Setup Cachix
+      #  uses: cachix/cachix-action@v15
+      #  with:
+      #    name: ${{ env.CACHIX_CACHE }}
+      #    authToken: ${{ secrets.CACHIX_KEY }}
 
       - name: Update Sources
         id: update
