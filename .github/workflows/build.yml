@@ -1,4 +1,8 @@
 name: Build "Portable" Mesa-Git (AMD/Intel/NVIDIA + LLVM 21) + Cache for Nix
+env:
+  ATTIC_SERVER: ${{ vars.ATTIC_SERVER }}
+  ATTIC_TOKEN: ${{ secrets.ATTIC_TOKEN }}
+  ATTIC_CACHE: ${{ vars.ATTIC_CACHE }}
 
 on:
   schedule:
@@ -15,9 +19,6 @@ on:
           - build-nightly
           - promote-to-main
 
-env:
-  CACHIX_CACHE: mesa-git
-
 jobs:
   nightly-build:
     if: github.event.schedule == '0 5 * * *' || inputs.task == 'build-nightly'
@@ -32,23 +33,23 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Nix
-        uses: cachix/install-nix-action@v27
+        uses: DeterminateSystems/nix-installer-action@main
         with:
-          extra_nix_config: |
+          extra-conf: |
             experimental-features = nix-command flakes
             accept-flake-config = true
 
-      - name: Setup Cachix
-        uses: cachix/cachix-action@v15
-        with:
-          name: ${{ env.CACHIX_CACHE }}
-          authToken: ${{ secrets.CACHIX_KEY }}
+      - name: Setup Attic for locally hosted binary cache
+        run: |
+          nix profile add nixpkgs#attic-client
+          attic login local $ATTIC_SERVER $ATTIC_TOKEN
+          attic use $ATTIC_CACHE
 
       - name: Update Sources
         id: update
         run: |
+          nix profile add nixpkgs#nix-prefetch-git
           cd pkgs
-          nix profile install nixpkgs#nix-prefetch-git
           OLD_MESA=$(jq -r '.mesa.rev' sources.json)
           bash update.sh
           NEW_MESA=$(jq -r '.mesa.rev' sources.json)
@@ -65,8 +66,10 @@ jobs:
       - name: Build Mesa
         if: steps.update.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         run: |
-          # Build and push to Cachix automatically via cachix-action
+          # Build and push to Attic
           nix build .#mesa-git .#mesa32-git -L
+          nix build .#bundle --out-link bundle-result -L
+          attic push $ATTIC_CACHE ./result ./result-1 ./bundle-result
 
       - name: Build & Package Bundle
         if: steps.update.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
@@ -74,6 +77,7 @@ jobs:
           MESA_REV: ${{ steps.update.outputs.mesa_rev }}
         run: |
           nix build .#bundle --out-link bundle-result -L
+          attic push $ATTIC_CACHE ./bundle-result
 
           mkdir -p artifact && cp -rL bundle-result/* artifact/ && chmod -R +w artifact
 
