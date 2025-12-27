@@ -50,7 +50,7 @@ sudo nixos-rebuild boot --flake .#<hostname> \
 Or you can build against the flake and accept its config:
 
 ```bash
-nix build github:powerofthe69/portable-mesa-git-nix#mesa-git --accept-flake-config --no-link
+nix build github:powerofthe69/portable-mesa-git-nix#bundle --accept-flake-config --no-link
 ```
 
 All others can download the tarball from the releases page.
