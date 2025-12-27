@@ -35,7 +35,7 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
         with:
-          extra_nix_config: |
+          extra-conf: |
             experimental-features = nix-command flakes
             accept-flake-config = true
 
